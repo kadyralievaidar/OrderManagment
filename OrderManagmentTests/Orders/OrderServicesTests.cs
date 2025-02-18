@@ -4,6 +4,7 @@ using OrderManagment.Database.UoW;
 using OrderManagment.Database.UoW.Repositories;
 using OrderManagment.Feautures.Discount.Interfaces;
 using OrderManagment.Feautures.Notification.Interfaces;
+using OrderManagment.Feautures.Orders.Interfaces;
 using OrderManagment.Feautures.Orders.Models;
 using OrderManagment.Feautures.Orders.Services;
 using OrderManagment.Feautures.Payment.Interfaces;
@@ -17,8 +18,7 @@ public class OrderServiceTests
     private Mock<IUnitOfWork> _unitOfWorkMock;
     private Mock<IPayment> _paymentMock;
     private Mock<IDiscountStrategy> _discountMock;
-    private Mock<IObserver> _observerMock;
-    private OrderService _orderService;
+    private IOrderService _orderService;
     private Order _testOrder;
     private CancellationToken _cancellationToken;
 
@@ -29,7 +29,6 @@ public class OrderServiceTests
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _paymentMock = new Mock<IPayment>();
         _discountMock = new Mock<IDiscountStrategy>();
-        _observerMock = new Mock<IObserver>();
 
         _orderService = new OrderService(
             _repositoryMock.Object,
@@ -53,7 +52,6 @@ public class OrderServiceTests
         // Act
         await _orderService.ProccesOrder(
             _testOrder,
-            new List<IObserver> { _observerMock.Object },
             _discountMock.Object,
             _cancellationToken
         );
@@ -76,9 +74,75 @@ public class OrderServiceTests
         Assert.ThrowsAsync<Exception>(async () =>
             await _orderService.ProccesOrder(
                 _testOrder,
-                new List<IObserver> { _observerMock.Object },
                 _discountMock.Object,
                 _cancellationToken
             ));
+    }
+
+    [Test]
+    public async Task ProcessOrder_ShouldNotifyObservers_WhenOrderIsProcessed()
+    {
+        // Arrange
+        _repositoryMock.Setup(r => r.GetById(_testOrder.Id)).Returns((Order)null);
+        _discountMock.Setup(d => d.ApplyDiscount(It.IsAny<decimal>())).Returns(80m);
+        _paymentMock.Setup(p => p.Pay(It.IsAny<decimal>())).Returns(1);
+        _unitOfWorkMock.Setup(u => u.BeginTransaction()).Returns(Mock.Of<IDbTransaction>());
+        var observer = new Mock<IObserver>();
+        _orderService.RegisterObserver(observer.Object);
+        // Act
+        await _orderService.ProccesOrder(
+            _testOrder,
+            _discountMock.Object,
+            _cancellationToken
+        );
+
+        // Assert
+        observer.Verify(o => o.Update(_testOrder.OrderStatus, _testOrder.Id), Times.Once);
+    }
+
+    [Test]
+    public async Task ProcessOrder_ShouldNotAddOrder_WhenOrderAlreadyExists()
+    {
+        // Arrange
+        var existingOrder = new Order { Id = _testOrder.Id, Price = 100m };
+        _repositoryMock.Setup(r => r.GetById(_testOrder.Id)).Returns(existingOrder);
+        _discountMock.Setup(d => d.ApplyDiscount(It.IsAny<decimal>())).Returns(80m);
+        _paymentMock.Setup(p => p.Pay(It.IsAny<decimal>())).Returns(1);
+        _unitOfWorkMock.Setup(u => u.BeginTransaction()).Returns(Mock.Of<IDbTransaction>());
+
+        // Act
+        await _orderService.ProccesOrder(
+            _testOrder,
+            _discountMock.Object,
+            _cancellationToken
+        );
+
+        // Assert
+        _repositoryMock.Verify(r => r.AddAsync(It.IsAny<Order>()), Times.Never);
+    }
+
+    [Test]
+    public async Task ProcessOrder_ShouldNotifyAllObservers_WhenOrderIsProcessed()
+    {
+        // Arrange
+        _repositoryMock.Setup(r => r.GetById(_testOrder.Id)).Returns((Order)null);
+        _discountMock.Setup(d => d.ApplyDiscount(It.IsAny<decimal>())).Returns(80m);
+        _paymentMock.Setup(p => p.Pay(It.IsAny<decimal>())).Returns(1);
+        _unitOfWorkMock.Setup(u => u.BeginTransaction()).Returns(Mock.Of<IDbTransaction>());
+        var observer = new Mock<IObserver>();
+        _orderService.RegisterObserver(observer.Object);
+        var observer2 = new Mock<IObserver>();
+        _orderService.RegisterObserver(observer2.Object);
+
+        // Act
+        await _orderService.ProccesOrder(
+            _testOrder,
+            _discountMock.Object,
+            _cancellationToken
+        );
+
+        // Assert
+        observer.Verify(o => o.Update(OrderStatus.Failed, _testOrder.Id), Times.Once);
+        observer2.Verify(o => o.Update(OrderStatus.Failed, _testOrder.Id), Times.Once);
     }
 }

@@ -5,5 +5,7 @@ using OrderManagment.Feautures.Orders.Models;
 namespace OrderManagment.Feautures.Orders.Interfaces;
 public interface IOrderService
 {
-    Task ProccesOrder(Order order, IEnumerable<IObserver> observer, IDiscountStrategy discountStrategy,CancellationToken cancellation);
+    void RegisterObserver(IObserver observer);
+    void UnregisterObserver(IObserver observer);
+    Task ProccesOrder(Order order, IDiscountStrategy discountStrategy,CancellationToken cancellation);
 }

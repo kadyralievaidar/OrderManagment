@@ -9,9 +9,27 @@ using OrderManagment.Feautures.Payment.Interfaces;
 namespace OrderManagment.Feautures.Orders.Services;
 public class OrderService(IOrderRepository repository, IUnitOfWork unitOfWork, IPayment payment) : IOrderService
 {
-    private IEnumerable<IObserver> _observers = new List<IObserver>();
+    private readonly List<IObserver> _observers = new();
 
-    public async Task ProccesOrder(Order order, IEnumerable<IObserver> observers, IDiscountStrategy discountStrategy, CancellationToken cancellationToken)
+
+    public void RegisterObserver(IObserver observer)
+    {
+        _observers.Add(observer);
+    }
+
+    public void UnregisterObserver(IObserver observer)
+    {
+        _observers.Remove(observer);
+    }
+
+    private void NotifyObservers(Order order)
+    {
+        foreach (var observer in _observers)
+        {
+            observer.Update(order.OrderStatus, order.Id);
+        }
+    }
+    public async Task ProccesOrder(Order order, IDiscountStrategy discountStrategy, CancellationToken cancellationToken)
     {
         using var scope = unitOfWork.BeginTransaction();
         try
@@ -21,11 +39,11 @@ public class OrderService(IOrderRepository repository, IUnitOfWork unitOfWork, I
             {
                 orderEntity = order;
                 orderEntity.Price = discountStrategy.ApplyDiscount(orderEntity.Price);
-                _observers = observers;
                 var result = payment.Pay(orderEntity.Price);
                 if (0 == result)
                     throw new Exception();
                 await repository.AddAsync(orderEntity);
+                NotifyObservers(orderEntity);
             }
             await scope.CommitAsync(cancellationToken);
         }
