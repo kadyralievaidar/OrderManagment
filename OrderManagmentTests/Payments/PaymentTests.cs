@@ -1,6 +1,4 @@
 using FluentAssertions;
-using Moq;
-using OrderManagment.Feautures.Payment.Interfaces;
 using OrderManagment.Feautures.Payment.Services;
 
 namespace OrderManagmentTests.Payments;
